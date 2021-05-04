@@ -1,9 +1,9 @@
 import tensorflow as tf
 import numpy as np
-from stable_baselines.common import tf_util
+from utils import get_trainable_vars
 
 class SACModel:
-    def __init__(self, sess, policy, target_entropy='auto', ent_coef='auto', gamma=0.99, tau=0.005):
+    def __init__(self, sess, policy, target_entropy='auto', ent_coef='auto', gamma=0.99, tau=0.005, mode="self_regularized"):
         self.sess = sess
         self.policy = policy
         with tf.variable_scope("loss", reuse=False):
@@ -27,33 +27,42 @@ class SACModel:
             else:
                 ent_coef = float(ent_coef)
 
-            min_qf_pi = tf.minimum(policy.qf1_pi, policy.qf2_pi)
-            q_backup = tf.stop_gradient(self.rewards_ph + (1 - self.terminals_ph) * gamma * policy.value_target)
 
-            qf1_loss = 0.5 * tf.reduce_mean((q_backup - policy.qf1) ** 2)
-            qf2_loss = 0.5 * tf.reduce_mean((q_backup - policy.qf2) ** 2)
+            if mode == "standard":
+                q_backup = tf.stop_gradient(self.rewards_ph + gamma*(1-self.terminals_ph)*policy.value_target)
+            elif mode == "self_regularized":
+                q_backup = tf.stop_gradient(self.rewards_ph + gamma*(1-self.terminals_ph)*policy.next_value_fn)
+
+
+            qf1_loss = 0.5*tf.reduce_mean((q_backup-policy.qf1)**2)
+            qf2_loss = 0.5*tf.reduce_mean((q_backup-policy.qf2)**2)
+
+            if mode == "self_regularized":
+                qf1_loss += 0.5*tf.reduce_mean((policy.next_qf1-policy.qf1)**2)
+                qf2_loss += 0.5*tf.reduce_mean((policy.next_qf2-policy.qf2)**2)
 
             ent_coef_loss, entropy_optimizer = None, None
             if not isinstance(ent_coef, float):
                 ent_coef_loss = -tf.reduce_mean(log_ent_coef * tf.stop_gradient(policy.logp_pi + target_entropy))
                 entropy_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate_ph)
             
-            policy_loss = tf.reduce_mean(ent_coef * policy.logp_pi - policy.qf1_pi)
+            policy_loss = tf.reduce_mean(ent_coef*policy.logp_pi - policy.qf1_pi)
             
-            v_backup = tf.stop_gradient(min_qf_pi - ent_coef * policy.logp_pi)
-            value_loss = 0.5 * tf.reduce_mean((policy.value_fn - v_backup) ** 2)
+            min_qf_pi = tf.minimum(policy.qf1_pi, policy.qf2_pi)
+            v_backup = tf.stop_gradient(min_qf_pi - ent_coef*policy.logp_pi)
+            value_loss = 0.5*tf.reduce_mean((policy.value_fn-v_backup)**2)
 
             values_losses = qf1_loss + qf2_loss + value_loss
 
             policy_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate_ph)
-            policy_train_op = policy_optimizer.minimize(policy_loss, var_list=tf_util.get_trainable_vars('model/pi'))
+            policy_train_op = policy_optimizer.minimize(policy_loss, var_list=get_trainable_vars('model/pi'))
 
             value_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate_ph)
-            values_params = tf_util.get_trainable_vars('model/values_fn')
-            source_params = tf_util.get_trainable_vars("model/values_fn")
-            target_params = tf_util.get_trainable_vars("target/values_fn")
+            values_params = get_trainable_vars('model/values_fn')
+            source_params = get_trainable_vars("model/values_fn")
+            target_params = get_trainable_vars("target/values_fn")
 
-            self.target_update_op = [tf.assign(target, (1 - tau) * target + tau * source) for target, source in zip(target_params, source_params)]
+            self.target_update_op = [tf.assign(target, (1-tau)*target + tau*source) for target, source in zip(target_params, source_params)]
             self.target_init_op = [tf.assign(target, source) for target, source in zip(target_params, source_params)]
 
             with tf.control_dependencies([policy_train_op]):
@@ -65,5 +74,3 @@ class SACModel:
                         ent_coef_op = entropy_optimizer.minimize(ent_coef_loss, var_list=log_ent_coef)
                         self.step_ops += [ent_coef_op, ent_coef_loss, ent_coef]
             
-            self.params = tf_util.get_trainable_vars("model")
-            self.target_params = tf_util.get_trainable_vars("target/values_fn")

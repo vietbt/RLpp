@@ -4,7 +4,7 @@ from layers import mlp_extractor, nature_cnn, linear
 from utils import gaussian_likelihood, gaussian_entropy, apply_squashing_func, observation_input
 
 class SACAgent:
-    def __init__(self, sess, env, net_arch=[64, 64], scale=False, feature_extraction="mlp", act_fun=tf.nn.relu, layer_norm=False):
+    def __init__(self, sess, env, net_arch=[64, 64], scale=False, feature_extraction="mlp", act_fun=tf.nn.relu, layer_norm=False, mode="self_regularized"):
         self.sess = sess
         self.env = env
         with tf.variable_scope("input", reuse=False):
@@ -17,9 +17,12 @@ class SACAgent:
             _, self.policy_out, self.logp_pi, self.entropy = self.make_actor(self.processed_obs_ph, **kwargs)
             self.qf1, self.qf2, self.value_fn = self.make_critics(self.processed_obs_ph, self.actions_ph, create_qf=True, create_vf=True, **kwargs)
             self.qf1_pi, self.qf2_pi, _  = self.make_critics(self.processed_obs_ph, self.policy_out, create_qf=True, create_vf=False, reuse=True, **kwargs)
-            
+            if mode == "self_regularized":
+                self.next_qf1, self.next_qf2, self.next_value_fn  = self.make_critics(self.processed_next_obs_ph, self.actions_ph, create_qf=True, create_vf=True, reuse=True, **kwargs)
+
         with tf.variable_scope("target", reuse=False):
             _, _, self.value_target = self.make_critics(self.processed_next_obs_ph, create_qf=False, create_vf=True, **kwargs)
+            
 
         self.params = tf.trainable_variables()
 

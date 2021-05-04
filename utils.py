@@ -2,7 +2,6 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Discrete, Box, MultiBinary, MultiDiscrete
 
-
 def scale_action(action_space, action):
     low, high = action_space.low, action_space.high
     return 2.0 * ((action - low) / (high - low)) - 1.0
@@ -42,24 +41,17 @@ def observation_input(ob_space, batch_size=None, name='Ob', scale=False):
         observation_ph = tf.placeholder(shape=(batch_size,), dtype=tf.int32, name=name)
         processed_observations = tf.cast(tf.one_hot(observation_ph, ob_space.n), tf.float32)
         return observation_ph, processed_observations
-
     elif isinstance(ob_space, Box):
         observation_ph = tf.placeholder(shape=(batch_size,) + ob_space.shape, dtype=ob_space.dtype, name=name)
         processed_observations = tf.cast(observation_ph, tf.float32)
-        # rescale to [1, 0] if the bounds are defined
-        if (scale and
-           not np.any(np.isinf(ob_space.low)) and not np.any(np.isinf(ob_space.high)) and
+        if (scale and not np.any(np.isinf(ob_space.low)) and not np.any(np.isinf(ob_space.high)) and
            np.any((ob_space.high - ob_space.low) != 0)):
-
-            # equivalent to processed_observations / 255.0 when bounds are set to [255, 0]
             processed_observations = ((processed_observations - ob_space.low) / (ob_space.high - ob_space.low))
         return observation_ph, processed_observations
-
     elif isinstance(ob_space, MultiBinary):
         observation_ph = tf.placeholder(shape=(batch_size, ob_space.n), dtype=tf.int32, name=name)
         processed_observations = tf.cast(observation_ph, tf.float32)
         return observation_ph, processed_observations
-
     elif isinstance(ob_space, MultiDiscrete):
         observation_ph = tf.placeholder(shape=(batch_size, len(ob_space.nvec)), dtype=tf.int32, name=name)
         processed_observations = tf.concat([
@@ -68,6 +60,5 @@ def observation_input(ob_space, batch_size=None, name='Ob', scale=False):
         ], axis=-1)
         return observation_ph, processed_observations
 
-    else:
-        raise NotImplementedError("Error: the model does not support input space of type {}".format(
-            type(ob_space).__name__))
+def get_trainable_vars(name):
+    return tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name)
