@@ -49,11 +49,11 @@ def mlp_extractor(input_tensor, layers, act_func=tf.nn.relu, layer_norm=False):
 
 def nature_cnn(scaled_images, **kwargs):
     act_func = tf.nn.relu
-    layer_1 = act_func(conv(scaled_images, 'c1', n_filters=32, filter_size=8, stride=4, init_scale=np.sqrt(2), **kwargs))
-    layer_2 = act_func(conv(layer_1, 'c2', n_filters=64, filter_size=4, stride=2, init_scale=np.sqrt(2), **kwargs))
-    layer_3 = act_func(conv(layer_2, 'c3', n_filters=64, filter_size=3, stride=1, init_scale=np.sqrt(2), **kwargs))
+    layer_1 = act_func(conv(scaled_images, 'cnn_c1', n_filters=32, filter_size=8, stride=4, init_scale=np.sqrt(2), **kwargs))
+    layer_2 = act_func(conv(layer_1, 'cnn_c2', n_filters=64, filter_size=4, stride=2, init_scale=np.sqrt(2), **kwargs))
+    layer_3 = act_func(conv(layer_2, 'cnn_c3', n_filters=64, filter_size=3, stride=1, init_scale=np.sqrt(2), **kwargs))
     layer_3 = conv_to_fc(layer_3)
-    return act_func(linear(layer_3, 'fc1', n_hidden=512, init_scale=np.sqrt(2)))
+    return act_func(linear(layer_3, 'cnn_fc1', n_hidden=512, init_scale=np.sqrt(2)))
 
 def conv(input_tensor, scope, *, n_filters, filter_size, stride, pad='VALID', init_scale=1.0, data_format='NHWC', one_dim_bias=False):
     if isinstance(filter_size, list) or isinstance(filter_size, tuple):

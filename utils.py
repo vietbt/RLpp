@@ -3,12 +3,16 @@ import tensorflow as tf
 from gym.spaces import Discrete, Box, MultiBinary, MultiDiscrete
 
 def scale_action(action_space, action):
+    if isinstance(action_space, Discrete):
+        return action
     low, high = action_space.low, action_space.high
     return 2.0 * ((action - low) / (high - low)) - 1.0
 
 def unscale_action(action_space, scaled_action):
+    if isinstance(action_space, Discrete):
+        return scaled_action
     low, high = action_space.low, action_space.high
-    return low + (0.5 * (scaled_action + 1.0) * (high - low))
+    return low + 0.5*(scaled_action + 1.0)*(high - low)
 
 def get_schedule_fn(value_schedule):
     return constfn(float(value_schedule))

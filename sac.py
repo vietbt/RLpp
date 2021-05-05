@@ -9,7 +9,7 @@ class SAC:
     def __init__(self, env, gamma=0.99, tau=0.005, learning_rate=3e-4, buffer_size=50000,
                  learning_starts=100, train_freq=1, batch_size=64,
                  target_update_interval=1, gradient_steps=1, target_entropy='auto', ent_coef='auto', 
-                 random_exploration=0.0):
+                 random_exploration=0.0, discrete=True, regularized=True, feature_extraction="cnn"):
         self.env = env
         self.learning_starts = learning_starts
         self.random_exploration = random_exploration
@@ -23,7 +23,7 @@ class SAC:
         with self.graph.as_default():
             self.sess = tf.Session(graph=self.graph)
             self.replay_buffer = ReplayBuffer(buffer_size)
-            self.agent = SACAgent(self.sess, env)
+            self.agent = SACAgent(self.sess, env, discrete=discrete, regularized=regularized, feature_extraction=feature_extraction)
             self.model = SACModel(self.sess, self.agent, target_entropy, ent_coef, gamma, tau)
             with self.sess.as_default():
                 self.sess.run(tf.global_variables_initializer())
@@ -32,6 +32,9 @@ class SAC:
 
     def train(self, learning_rate):
         batch_obs, batch_actions, batch_rewards, batch_next_obs, batch_dones = self.replay_buffer.sample(self.batch_size)
+        print("batch_actions:", batch_actions.shape)
+        print("self.agent.actions_ph:", self.agent.actions_ph)
+        
         feed_dict = {
             self.agent.obs_ph: batch_obs,
             self.agent.actions_ph: batch_actions,
@@ -54,6 +57,7 @@ class SAC:
                 action = scale_action(self.env.action_space, unscaled_action)
             else:
                 action = self.agent.step(obs[None]).flatten()
+                print("action:", action)
                 unscaled_action = unscale_action(self.env.action_space, action)
             new_obs, reward, done, _ = self.env.step(unscaled_action)
             self.num_timesteps += 1

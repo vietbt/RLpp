@@ -3,7 +3,7 @@ import numpy as np
 from utils import get_trainable_vars
 
 class SACModel:
-    def __init__(self, sess, policy, target_entropy='auto', ent_coef='auto', gamma=0.99, tau=0.005, mode="self_regularized"):
+    def __init__(self, sess, policy, target_entropy='auto', ent_coef='auto', gamma=0.99, tau=0.005):
         self.sess = sess
         self.policy = policy
         with tf.variable_scope("loss", reuse=False):
@@ -14,7 +14,10 @@ class SACModel:
             self.entropy = tf.reduce_mean(policy.entropy)
             
             if target_entropy == 'auto':
-                target_entropy = -np.prod(policy.env.action_space.shape).astype(np.float32)
+                if policy.discrete:
+                    target_entropy = -np.log(1.0/policy.env.action_space.n) * 0.98
+                else:
+                    target_entropy = -np.prod(policy.env.action_space.shape).astype(np.float32)
             else:
                 target_entropy = float(target_entropy)
             
@@ -28,16 +31,16 @@ class SACModel:
                 ent_coef = float(ent_coef)
 
 
-            if mode == "standard":
-                q_backup = tf.stop_gradient(self.rewards_ph + gamma*(1-self.terminals_ph)*policy.value_target)
-            elif mode == "self_regularized":
+            if policy.regularized:
                 q_backup = tf.stop_gradient(self.rewards_ph + gamma*(1-self.terminals_ph)*policy.next_value_fn)
+            else:
+                q_backup = tf.stop_gradient(self.rewards_ph + gamma*(1-self.terminals_ph)*policy.value_target)
 
 
             qf1_loss = 0.5*tf.reduce_mean((q_backup-policy.qf1)**2)
             qf2_loss = 0.5*tf.reduce_mean((q_backup-policy.qf2)**2)
 
-            if mode == "self_regularized":
+            if policy.regularized:
                 qf1_loss += 0.5*tf.reduce_mean((policy.next_qf1-policy.qf1)**2)
                 qf2_loss += 0.5*tf.reduce_mean((policy.next_qf2-policy.qf2)**2)
 
