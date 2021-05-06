@@ -41,21 +41,50 @@ class SACModel:
             qf2_loss = 0.5*tf.reduce_mean((q_backup-policy.qf2)**2)
 
             if policy.regularized:
-                qf1_loss += 0.5*tf.reduce_mean((policy.next_qf1-policy.qf1)**2)
-                qf2_loss += 0.5*tf.reduce_mean((policy.next_qf2-policy.qf2)**2)
+                qf1_loss += 0.5*tf.reduce_mean((policy.next_qf1 - policy.qf1)**2)
+                qf2_loss += 0.5*tf.reduce_mean((policy.next_qf2 - policy.qf2)**2)
+            
+            if policy.discrete:
+                policy_out = -policy.pd.neglogp(policy.actions_ph)
 
             ent_coef_loss, entropy_optimizer = None, None
             if not isinstance(ent_coef, float):
-                ent_coef_loss = -tf.reduce_mean(log_ent_coef * tf.stop_gradient(policy.logp_pi + target_entropy))
+                if policy.discrete:
+                    ent_coef_loss = tf.reduce_mean(
+                        tf.reduce_sum(
+                            tf.multiply(
+                                tf.stop_gradient(policy_out), 
+                                -log_ent_coef * tf.stop_gradient(policy.logp_pi + target_entropy)
+                            ),
+                            axis=-1
+                        )
+                    )
+                else:
+                    ent_coef_loss = -tf.reduce_mean(log_ent_coef * tf.stop_gradient(policy.logp_pi + target_entropy))
                 entropy_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate_ph)
             
-            policy_loss = tf.reduce_mean(ent_coef*policy.logp_pi - policy.qf1_pi)
+            if policy.discrete:
+                policy_loss = tf.reduce_mean(
+                    tf.reduce_sum(
+                        tf.multiply(
+                            policy_out, 
+                            ent_coef * policy.logp_pi - tf.stop_gradient(policy.qf1)
+                        ),
+                        axis=-1
+                    )
+                )
+            else:
+                policy_loss = tf.reduce_mean(ent_coef*policy.logp_pi - policy.qf1_pi)
             
-            min_qf_pi = tf.minimum(policy.qf1_pi, policy.qf2_pi)
-            v_backup = tf.stop_gradient(min_qf_pi - ent_coef*policy.logp_pi)
-            value_loss = 0.5*tf.reduce_mean((policy.value_fn-v_backup)**2)
-
-            values_losses = qf1_loss + qf2_loss + value_loss
+            if not policy.discrete:
+                min_qf_pi = tf.minimum(policy.qf1_pi, policy.qf2_pi)
+                v_backup = tf.stop_gradient(min_qf_pi - ent_coef*policy.logp_pi)
+                value_loss = 0.5*tf.reduce_mean((policy.value_fn-v_backup)**2)
+                values_losses = qf1_loss + qf2_loss + value_loss
+                self.step_ops = [policy_loss, qf1_loss, qf2_loss, value_loss]
+            else:
+                values_losses = qf1_loss + qf2_loss
+                self.step_ops = [policy_loss, qf1_loss, qf2_loss]
 
             policy_optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate_ph)
             policy_train_op = policy_optimizer.minimize(policy_loss, var_list=get_trainable_vars('model/pi'))
@@ -70,7 +99,7 @@ class SACModel:
 
             with tf.control_dependencies([policy_train_op]):
                 train_values_op = value_optimizer.minimize(values_losses, var_list=values_params)
-                self.step_ops = [policy_loss, qf1_loss, qf2_loss, value_loss, policy.qf1, policy.qf2, policy.value_fn, policy.logp_pi, policy.entropy, policy_train_op, train_values_op]
+                self.step_ops += [policy.qf1, policy.qf2, policy.value_fn, policy.logp_pi, policy.entropy, policy_train_op, train_values_op]
 
                 if ent_coef_loss is not None:
                     with tf.control_dependencies([train_values_op]):

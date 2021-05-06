@@ -32,19 +32,23 @@ class SAC:
 
     def train(self, learning_rate):
         batch_obs, batch_actions, batch_rewards, batch_next_obs, batch_dones = self.replay_buffer.sample(self.batch_size)
-        print("batch_actions:", batch_actions.shape)
-        print("self.agent.actions_ph:", self.agent.actions_ph)
+        # print("batch_actions:", batch_actions.shape)
+        # print("self.agent.actions_ph:", self.agent.actions_ph)
         
         feed_dict = {
             self.agent.obs_ph: batch_obs,
-            self.agent.actions_ph: batch_actions,
             self.agent.next_obs_ph: batch_next_obs,
             self.model.rewards_ph: batch_rewards.reshape(self.batch_size, -1),
             self.model.terminals_ph: batch_dones.reshape(self.batch_size, -1),
             self.model.learning_rate_ph: learning_rate
         }
+        if not self.agent.discrete:
+            feed_dict[self.agent.actions_ph] = batch_actions
+        else:
+            batch_actions = batch_actions.reshape(-1)
+            feed_dict[self.agent.actions_ph] = batch_actions
         policy_loss, qf1_loss, qf2_loss, value_loss, *values = self.sess.run(self.model.step_ops, feed_dict)
-        return policy_loss, qf1_loss, qf2_loss, value_loss
+        return policy_loss, qf1_loss, qf2_loss
 
     def learn(self, total_timesteps):
         learning_rate = get_schedule_fn(self.learning_rate)
@@ -57,8 +61,8 @@ class SAC:
                 action = scale_action(self.env.action_space, unscaled_action)
             else:
                 action = self.agent.step(obs[None]).flatten()
-                print("action:", action)
                 unscaled_action = unscale_action(self.env.action_space, action)
+            # print("\nunscaled_action:", unscaled_action)
             new_obs, reward, done, _ = self.env.step(unscaled_action)
             self.num_timesteps += 1
             self.replay_buffer.add(obs, action, reward, new_obs, done)

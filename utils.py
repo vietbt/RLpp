@@ -10,7 +10,7 @@ def scale_action(action_space, action):
 
 def unscale_action(action_space, scaled_action):
     if isinstance(action_space, Discrete):
-        return scaled_action
+        return scaled_action[0]
     low, high = action_space.low, action_space.high
     return low + 0.5*(scaled_action + 1.0)*(high - low)
 

@@ -32,7 +32,46 @@ class DiagGaussianProbabilityDistribution:
 
     def entropy(self):
         return tf.reduce_sum(self.logstd + .5 * np.log(2.0 * np.pi * np.e), axis=-1)
+
+
+class SquashedGaussianDistribution:
+    def __init__(self, flat):
+        self.LOG_STD_MAX = 2
+        self.LOG_STD_MIN = -20
+        self.EPS = 1e-6
+        self.flat = flat
+        mean, logstd = tf.split(axis=len(flat.shape) - 1, num_or_size_splits=2, value=flat)
+        self.mean = mean
+        self.logstd = tf.clip_by_value(logstd, self.LOG_STD_MIN, self.LOG_STD_MAX)
+        self.std = tf.exp(logstd)
+        
     
+    @classmethod
+    def proba_distribution_from_latent(cls, size, pi_latent_vector, vf_latent_vector, init_scale=1.0, init_bias=0.0):
+        mean = linear(pi_latent_vector, 'pi', size, init_scale=init_scale, init_bias=init_bias)
+        logstd = linear(pi_latent_vector, 'logstd', size, init_scale=init_scale, init_bias=init_bias)
+        # logstd = tf.get_variable(name='pi/logstd', shape=[1, size], initializer=tf.zeros_initializer())
+        pdparam = tf.concat([mean, mean * 0.0 + logstd], axis=1)
+        q_values = linear(vf_latent_vector, 'q', size, init_scale=init_scale, init_bias=init_bias)
+        return cls(pdparam), mean, q_values
+
+    def sample(self):
+        return tf.tanh(self.mean + self.std * tf.random_normal(tf.shape(self.mean), dtype=self.mean.dtype))
+    
+    def mode(self):
+        return tf.tanh(self.mean)
+        
+    def neglogp(self, x):
+        neglogp_likelihood = 0.5 * tf.reduce_sum(tf.square((tf.atanh(x)-self.mean)/(self.std+self.EPS)), axis=-1) \
+               + 0.5 * np.log(2.0 * np.pi) * tf.cast(tf.shape(x)[-1], tf.float32) \
+               + tf.reduce_sum(self.logstd, axis=-1)
+        policy = self.sample()
+        return neglogp_likelihood + tf.reduce_sum(tf.log(1 - policy**2 + self.EPS), axis=-1)
+
+
+    def entropy(self):
+        return tf.reduce_sum(self.logstd + .5 * np.log(2.0 * np.pi * np.e), axis=-1)
+
 
 class CategoricalProbabilityDistribution:
     def __init__(self, logits):
@@ -119,9 +158,12 @@ class BernoulliProbabilityDistribution:
         return tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=self.probabilities), axis=-1)
 
 
-def make_proba_dist(ac_space, pi_latent_vector, vf_latent_vector, init_scale=1.0, init_bias=0.0):
+def make_proba_dist(ac_space, pi_latent_vector, vf_latent_vector, init_scale=1.0, init_bias=0.0, use_squashed=False):
     if isinstance(ac_space, spaces.Box):
-        return DiagGaussianProbabilityDistribution.proba_distribution_from_latent(ac_space.shape[0], pi_latent_vector, vf_latent_vector, init_scale, init_bias)
+        if use_squashed:
+            return SquashedGaussianDistribution.proba_distribution_from_latent(ac_space.shape[0], pi_latent_vector, vf_latent_vector, init_scale, init_bias)
+        else:
+            return DiagGaussianProbabilityDistribution.proba_distribution_from_latent(ac_space.shape[0], pi_latent_vector, vf_latent_vector, init_scale, init_bias)
     elif isinstance(ac_space, spaces.Discrete):
         return CategoricalProbabilityDistribution.proba_distribution_from_latent(ac_space.n, pi_latent_vector, vf_latent_vector, init_scale, init_bias)
     elif isinstance(ac_space, spaces.MultiDiscrete):
